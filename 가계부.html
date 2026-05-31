@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>가계부</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet" />
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Noto Sans KR', sans-serif; background: #f5f4f0; color: #1a1a1a; min-height: 100vh; }
+  .container { max-width: 900px; margin: 0 auto; padding: 2rem 1.25rem; }
+  .header { display: flex; align-items: flex-end; justify-content: space-between; margin-bottom: 2rem; flex-wrap: wrap; gap: 12px; }
+  .header-left h1 { font-size: 26px; font-weight: 700; letter-spacing: -0.5px; }
+  .header-left p { font-size: 14px; color: #888; margin-top: 3px; }
+  .header-right { display: flex; gap: 8px; align-items: center; }
+  .add-btn { display: flex; align-items: center; gap: 6px; padding: 10px 20px; background: #1a1a1a; color: #fff; border: none; border-radius: 10px; font-size: 14px; font-weight: 500; font-family: inherit; cursor: pointer; transition: background 0.15s; }
+  .add-btn:hover { background: #333; }
+  .sync-btn { display: flex; align-items: center; gap: 6px; padding: 10px 16px; background: #fff; color: #1a1a1a; border: 1px solid #e5e5e5; border-radius: 10px; font-size: 14px; font-weight: 500; font-family: inherit; cursor: pointer; transition: background 0.15s; }
+  .sync-btn:hover { background: #f5f5f5; }
+  .sync-btn.loading { opacity: 0.6; pointer-events: none; }
+
+  .toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); background: #1a1a1a; color: #fff; padding: 12px 24px; border-radius: 10px; font-size: 14px; opacity: 0; transition: opacity 0.3s; pointer-events: none; z-index: 999; }
+  .toast.show { opacity: 1; }
+
+  .summary-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-bottom: 2rem; }
+  .s-card { background: #fff; border-radius: 14px; padding: 18px 20px; border: 1px solid #eee; }
+  .s-card .label { font-size: 12px; color: #999; margin-bottom: 6px; }
+  .s-card .value { font-size: 22px; font-weight: 700; letter-spacing: -0.5px; }
+  .s-card .sub { font-size: 12px; color: #aaa; margin-top: 3px; }
+
+  .chart-section { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 2rem; }
+  @media (max-width: 560px) { .chart-section { grid-template-columns: 1fr; } }
+  .chart-card { background: #fff; border-radius: 14px; padding: 1.5rem; border: 1px solid #eee; }
+  .chart-card h3 { font-size: 14px; font-weight: 500; color: #555; margin-bottom: 1rem; }
+  .chart-wrap { position: relative; height: 200px; }
+  .legend { margin-top: 14px; display: flex; flex-direction: column; gap: 7px; }
+  .legend-item { display: flex; align-items: center; justify-content: space-between; font-size: 12px; }
+  .legend-left { display: flex; align-items: center; gap: 7px; }
+  .legend-dot { width: 10px; height: 10px; border-radius: 3px; flex-shrink: 0; }
+  .legend-name { color: #666; }
+  .legend-pct { color: #1a1a1a; font-weight: 500; }
+  .drill-hint { font-size: 11px; color: #bbb; text-align: center; margin-top: 10px; }
+  .drill-hint.clickable { cursor: pointer; color: #888; text-decoration: underline; }
+  .drill-hint.clickable:hover { color: #333; }
+
+  .table-card { background: #fff; border-radius: 14px; overflow: hidden; border: 1px solid #eee; }
+  .table-header { display: grid; grid-template-columns: 2fr 1.3fr 1fr 1fr 1.1fr; gap: 8px; padding: 12px 20px; background: #fafafa; border-bottom: 1px solid #eee; font-size: 11px; font-weight: 500; color: #aaa; letter-spacing: 0.3px; }
+  .table-row { display: grid; grid-template-columns: 2fr 1.3fr 1fr 1fr 1.1fr; gap: 8px; padding: 14px 20px; border-bottom: 1px solid #f5f5f5; font-size: 13px; align-items: center; transition: background 0.1s; }
+  .table-row:last-child { border-bottom: none; }
+  .table-row:hover { background: #fafafa; }
+  .row-name { font-weight: 500; color: #1a1a1a; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .row-amount { font-weight: 700; color: #1a1a1a; }
+  .cat-badge { font-size: 11px; padding: 3px 9px; border-radius: 20px; display: inline-block; white-space: nowrap; }
+  .row-sub { font-size: 12px; color: #999; }
+  .row-date-del { display: flex; align-items: center; justify-content: space-between; gap: 4px; }
+  .row-date { font-size: 12px; color: #bbb; }
+  .delete-btn { background: none; border: none; cursor: pointer; color: #ccc; font-size: 15px; padding: 2px; line-height: 1; transition: color 0.15s; }
+  .delete-btn:hover { color: #e53935; }
+  .empty-state { padding: 3rem; text-align: center; font-size: 14px; color: #bbb; }
+
+  .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.35); display: flex; align-items: center; justify-content: center; z-index: 100; backdrop-filter: blur(2px); }
+  .modal { background: #fff; border-radius: 18px; padding: 2rem; width: 360px; max-width: 95vw; box-shadow: 0 20px 60px rgba(0,0,0,0.15); }
+  .modal h2 { font-size: 17px; font-weight: 700; margin-bottom: 1.5rem; }
+  .form-group { margin-bottom: 14px; }
+  .form-group label { display: block; font-size: 12px; color: #888; margin-bottom: 6px; font-weight: 500; }
+  .form-group input, .form-group select { width: 100%; padding: 10px 14px; border: 1px solid #e5e5e5; border-radius: 10px; font-size: 14px; font-family: inherit; color: #1a1a1a; background: #fafafa; outline: none; transition: border 0.15s; }
+  .form-group input:focus, .form-group select:focus { border-color: #1a1a1a; background: #fff; }
+  .modal-actions { display: flex; gap: 8px; margin-top: 1.5rem; }
+  .btn-cancel { flex: 1; padding: 11px; background: #f5f5f5; border: none; border-radius: 10px; font-size: 14px; font-weight: 500; font-family: inherit; cursor: pointer; color: #666; }
+  .btn-cancel:hover { background: #eee; }
+  .btn-save { flex: 2; padding: 11px; background: #1a1a1a; border: none; border-radius: 10px; font-size: 14px; font-weight: 700; font-family: inherit; cursor: pointer; color: #fff; }
+  .btn-save:hover { background: #333; }
+  .btn-save:disabled { background: #999; cursor: not-allowed; }
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="header">
+    <div class="header-left">
+      <h1>가계부 💳</h1>
+      <p id="period-label"></p>
+    </div>
+    <div class="header-right">
+      <button class="sync-btn" id="syncBtn" onclick="loadFromSheet()">🔄 불러오기</button>
+      <button class="add-btn" onclick="openModal()">＋ 지출 추가</button>
+    </div>
+  </div>
+
+  <div class="summary-cards">
+    <div class="s-card">
+      <div class="label">총 지출</div>
+      <div class="value" id="total-amount">0원</div>
+      <div class="sub" id="total-count">0건</div>
+    </div>
+    <div class="s-card">
+      <div class="label">가장 많은 지출</div>
+      <div class="value" id="top-cat" style="font-size:18px">-</div>
+      <div class="sub" id="top-cat-amt"></div>
+    </div>
+    <div class="s-card">
+      <div class="label">카테고리 수</div>
+      <div class="value" id="cat-count">0</div>
+      <div class="sub">대분류</div>
+    </div>
+  </div>
+
+  <div class="chart-section">
+    <div class="chart-card">
+      <h3>대분류별 지출 — 클릭하면 소분류를 볼 수 있어요</h3>
+      <div class="chart-wrap">
+        <canvas id="mainChart"></canvas>
+      </div>
+      <div class="legend" id="main-legend"></div>
+    </div>
+    <div class="chart-card">
+      <h3 id="sub-chart-title">소분류별 지출</h3>
+      <div class="chart-wrap">
+        <canvas id="subChart"></canvas>
+      </div>
+      <div class="legend" id="sub-legend"></div>
+      <p class="drill-hint clickable" id="sub-hint" style="display:none" onclick="resetSubChart()">← 전체 보기</p>
+    </div>
+  </div>
+
+  <div class="table-card">
+    <div class="table-header">
+      <span>내역</span><span>금액</span><span>대분류</span><span>소분류</span><span>날짜</span>
+    </div>
+    <div id="table-body"></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<div class="modal-overlay" id="modal" style="display:none">
+  <div class="modal">
+    <h2>지출 추가</h2>
+    <div class="form-group">
+      <label>내역</label>
+      <input type="text" id="f-name" placeholder="예: 스타벅스 아메리카노" />
+    </div>
+    <div class="form-group">
+      <label>금액 (원)</label>
+      <input type="number" id="f-amount" placeholder="예: 6500" min="0" />
+    </div>
+    <div class="form-group">
+      <label>대분류</label>
+      <select id="f-main" onchange="updateSubOptions()">
+        <option value="">선택하세요</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label>소분류</label>
+      <select id="f-sub">
+        <option value="">먼저 대분류를 선택하세요</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label>날짜</label>
+      <input type="date" id="f-date" />
+    </div>
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="closeModal()">취소</button>
+      <button class="btn-save" id="saveBtn" onclick="addExpense()">저장</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwGTS9CevFb5Aa0k6508OmQYxvUjuiKNXHOd0QeS3Er4vxEcRNswuFR-nwIOJb_T1S4EQ/exec';
+
+const CATEGORIES = {
+  '식비': ['외식','카페','장보기','배달'],
+  '교통': ['지하철/버스','택시','주유','주차'],
+  '주거': ['월세','관리비','인터넷/통신','수도/전기'],
+  '쇼핑': ['의류','생활용품','가전/전자','뷰티'],
+  '문화': ['영화/공연','도서','구독서비스','스포츠'],
+  '의료': ['병원','약국','건강식품'],
+  '교육': ['학원','교재','온라인강의'],
+  '기타': ['경조사','세금/공과금','기타']
+};
+const COLORS = ['#4A7FE0','#2DB38A','#D45D7E','#E09B2D','#8B7BE0','#D86040','#5FA832','#909090'];
+const LIGHTS = ['#C3D8F8','#A8E8D4','#F5C0D1','#FAE1A8','#D0CAFF','#F5C4B3','#C8E898','#D8D8D8'];
+
+let expenses = [];
+let nextId = 1;
+let selectedMain = null;
+let mainChart, subChart;
+
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 2500);
+}
+
+async function loadFromSheet() {
+  const btn = document.getElementById('syncBtn');
+  btn.classList.add('loading');
+  btn.textContent = '불러오는 중...';
+  try {
+    const res = await fetch(SCRIPT_URL);
+    const data = await res.json();
+    expenses = data
+      .filter(r => r['날짜'] && r['내역'])
+      .map((r, i) => ({
+        id: i + 1,
+        date: r['날짜'] ? String(r['날짜']).slice(0, 10) : '',
+        type: r['구분'] || '지출',
+        name: r['내역'] || '',
+        amount: Number(r['금액']) || 0,
+        main: r['대분류'] || '',
+        sub: r['소분류'] || ''
+      }));
+    nextId = expenses.length + 1;
+    renderAll();
+    showToast('✅ 데이터를 불러왔어요!');
+  } catch(e) {
+    showToast('❌ 불러오기 실패. 다시 시도해주세요.');
+  }
+  btn.classList.remove('loading');
+  btn.textContent = '🔄 불러오기';
+}
+
+async function saveToSheet(row) {
+  await fetch(SCRIPT_URL, {
+    method: 'POST',
+    mode: 'no-cors',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(row)
+  });
+}
+
+function getMainTotals() {
+  const m = {};
+  expenses.forEach(e => { if(e.main) m[e.main] = (m[e.main]||0) + e.amount; });
+  return m;
+}
+function getSubTotals(mc) {
+  const m = {};
+  expenses.filter(e => !mc || e.main === mc).forEach(e => { if(e.sub) m[e.sub] = (m[e.sub]||0) + e.amount; });
+  return m;
+}
+function buildLegend(el, labels, data, colors) {
+  const total = data.reduce((a,b)=>a+b,0);
+  el.innerHTML = labels.map((l,i) => `
+    <div class="legend-item">
+      <div class="legend-left"><span class="legend-dot" style="background:${colors[i%colors.length]}"></span><span class="legend-name">${l}</span></div>
+      <span class="legend-pct">${total>0?Math.round(data[i]/total*100):0}% · ${data[i].toLocaleString()}원</span>
+    </div>`).join('');
+}
+function buildMainChart() {
+  const t = getMainTotals(), labels = Object.keys(t), data = Object.values(t);
+  const colors = labels.map((_,i) => COLORS[i%COLORS.length]);
+  if(mainChart) mainChart.destroy();
+  if(!labels.length) return;
+  mainChart = new Chart(document.getElementById('mainChart'), {
+    type: 'doughnut',
+    data: { labels, datasets: [{ data, backgroundColor: colors, borderWidth: 2, borderColor: '#fff', hoverOffset: 8 }] },
+    options: { responsive: true, maintainAspectRatio: false, cutout: '65%',
+      plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => ` ${c.label}: ${c.raw.toLocaleString()}원` } } },
+      onClick: (_, els) => { if(els.length) { selectedMain = labels[els[0].index]; buildSubChart(selectedMain); } } }
+  });
+  buildLegend(document.getElementById('main-legend'), labels, data, colors);
+}
+function buildSubChart(mc) {
+  const t = getSubTotals(mc), labels = Object.keys(t), data = Object.values(t);
+  const mkeys = Object.keys(getMainTotals()), mi = mkeys.indexOf(mc);
+  const colors = labels.map((_,i) => i===0 ? COLORS[mi%COLORS.length] : i===1 ? LIGHTS[mi%LIGHTS.length] : COLORS[(mi+i)%COLORS.length]);
+  document.getElementById('sub-chart-title').textContent = mc ? `${mc} · 소분류` : '소분류별 지출';
+  document.getElementById('sub-hint').style.display = mc ? 'block' : 'none';
+  if(subChart) subChart.destroy();
+  if(!labels.length) return;
+  subChart = new Chart(document.getElementById('subChart'), {
+    type: 'doughnut',
+    data: { labels, datasets: [{ data, backgroundColor: colors, borderWidth: 2, borderColor: '#fff', hoverOffset: 8 }] },
+    options: { responsive: true, maintainAspectRatio: false, cutout: '65%',
+      plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => ` ${c.label}: ${c.raw.toLocaleString()}원` } } } }
+  });
+  buildLegend(document.getElementById('sub-legend'), labels, data, colors);
+}
+function resetSubChart() { selectedMain = null; buildSubChart(null); }
+
+function buildTable() {
+  const body = document.getElementById('table-body');
+  if(!expenses.length) { body.innerHTML = '<div class="empty-state">🔄 불러오기를 눌러 데이터를 가져오세요!</div>'; return; }
+  const sorted = [...expenses].sort((a,b) => b.date.localeCompare(a.date));
+  const mkeys = Object.keys(getMainTotals());
+  body.innerHTML = sorted.map(e => {
+    const ci = mkeys.indexOf(e.main) % COLORS.length;
+    return `<div class="table-row">
+      <span class="row-name">${e.name}</span>
+      <span class="row-amount">${Number(e.amount).toLocaleString()}원</span>
+      <span><span class="cat-badge" style="background:${LIGHTS[ci]||'#eee'};color:${COLORS[ci]||'#333'}">${e.main}</span></span>
+      <span class="row-sub">${e.sub}</span>
+      <span class="row-date-del"><span class="row-date">${e.date.slice(5)}</span></span>
+    </div>`;
+  }).join('');
+}
+
+function updateSummary() {
+  const total = expenses.reduce((a,e)=>a+e.amount,0);
+  document.getElementById('total-amount').textContent = total.toLocaleString()+'원';
+  document.getElementById('total-count').textContent = expenses.length+'건';
+  const t = getMainTotals(), top = Object.entries(t).sort((a,b)=>b[1]-a[1])[0];
+  if(top) { document.getElementById('top-cat').textContent = top[0]; document.getElementById('top-cat-amt').textContent = top[1].toLocaleString()+'원'; }
+  document.getElementById('cat-count').textContent = Object.keys(t).length;
+  const n = new Date();
+  document.getElementById('period-label').textContent = `${n.getFullYear()}년 ${n.getMonth()+1}월`;
+}
+
+function renderAll() { updateSummary(); buildMainChart(); buildSubChart(selectedMain); buildTable(); }
+
+function openModal() {
+  const sel = document.getElementById('f-main');
+  sel.innerHTML = '<option value="">선택하세요</option>' + Object.keys(CATEGORIES).map(k=>`<option value="${k}">${k}</option>`).join('');
+  document.getElementById('f-date').value = new Date().toISOString().slice(0,10);
+  document.getElementById('f-name').value = '';
+  document.getElementById('f-amount').value = '';
+  document.getElementById('f-sub').innerHTML = '<option value="">먼저 대분류를 선택하세요</option>';
+  document.getElementById('modal').style.display = 'flex';
+}
+function closeModal() { document.getElementById('modal').style.display = 'none'; }
+function updateSubOptions() {
+  const m = document.getElementById('f-main').value, sub = document.getElementById('f-sub');
+  if(!m) { sub.innerHTML = '<option value="">먼저 대분류를 선택하세요</option>'; return; }
+  sub.innerHTML = '<option value="">선택하세요</option>' + (CATEGORIES[m]||[]).map(s=>`<option value="${s}">${s}</option>`).join('');
+}
+
+async function addExpense() {
+  const name = document.getElementById('f-name').value.trim();
+  const amount = parseInt(document.getElementById('f-amount').value);
+  const main = document.getElementById('f-main').value;
+  const sub = document.getElementById('f-sub').value;
+  const date = document.getElementById('f-date').value;
+  if(!name||!amount||!main||!sub||!date) { alert('모든 항목을 입력해주세요'); return; }
+
+  const saveBtn = document.getElementById('saveBtn');
+  saveBtn.disabled = true;
+  saveBtn.textContent = '저장 중...';
+
+  const row = { date, type: '지출', name, amount, main, sub };
+  await saveToSheet(row);
+
+  expenses.unshift({ id: nextId++, ...row });
+  closeModal();
+  renderAll();
+  showToast('✅ 구글 시트에 저장됐어요!');
+
+  saveBtn.disabled = false;
+  saveBtn.textContent = '저장';
+}
+
+document.getElementById('modal').addEventListener('click', e => { if(e.target === document.getElementById('modal')) closeModal(); });
+
+loadFromSheet();
+</script>
+</body>
+</html>
